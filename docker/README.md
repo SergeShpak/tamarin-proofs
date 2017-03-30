@@ -11,7 +11,7 @@ If the non-root access to the docker daemon has not been granted, you have
 to tweak the commands a bit:
 
 ```sh
-$ sudo docker build -t $(image-name) .
+$ sudo docker build -t tamarin-ssh .
 $ sudo ./run
 ```
 
