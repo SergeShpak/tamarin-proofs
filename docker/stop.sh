@@ -1,2 +1,2 @@
-sudo docker stop tamarin
-sudo docker rm tamarin
+docker stop tamarin
+docker rm tamarin

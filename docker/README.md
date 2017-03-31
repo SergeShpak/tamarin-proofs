@@ -14,15 +14,22 @@ to tweak the commands a bit:
 $ sudo docker build -t tamarin-ssh .
 $ sudo ./run
 ```
+Further, we assume a root access to the daemon and omit *sudo* command.
+
+If you want to pass additional parameters to Docker, when starting a container,
+you can pass them directly to the *./run* script. Here, for example, we
+mount a host's directory as a read-only data volume:
+
+```sh
+$ ./run -v $(realpath ../some/dir):/container/data/volume:ro
+```
 
 ## Connecting to the server
 
-In oreder to connect to the container via SSH use:
+In order to connect to the container via SSH use:
 
 ```sh
 $ ./connect.sh
-# or if no non-root access to docker
-$ sudo ./connect.sh
 ```
 
 When the system asks, whether the connection should be established with an 
@@ -40,5 +47,5 @@ To close the connection, type *exit* or use Ctrl-D. To stop and remove the
 container use:
 
 ```sh
-$ sudo ./stop.sh
+$ ./stop.sh
 ```
