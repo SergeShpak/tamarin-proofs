@@ -1,0 +1,122 @@
+theory android
+begin
+
+functions: xor/2, xor_inv/2, cbc_enc/3, cbc_dec/3, null/0, enc_int/2, dec_int/2
+
+equations:
+    xor_inv(xor(a, b), a) = b,
+    xor_inv(xor(a, b), b) = a,
+    xor(a, null) = a,
+    dec_int(enc_int(m, k), k) = m,
+    cbc_enc(m, c, k) = enc_int(xor(c, m), k),
+    cbc_dec(cCurr, cPrev, k) = xor_inv(dec_int(cCurr, k), cPrev)
+
+
+rule CBCEncrypt:
+    let
+    c1 = cbc_enc(head, ~c0, ~k) 
+    in
+    [
+        CBCEncrypt(token, <head, tail>),
+        Fr(~c0),
+        Fr(~k)
+    ]
+    --[
+        NotEq(head, null),
+        NotEq(tail, null),
+        CBCEncrypt_Check(),
+        CBCEncrypt_Token(token),
+        CBCEncrypt_Tail(tail)
+    ]->
+    [
+        CBCEncryptIntermOut(token, <c1, ~c0, null>, tail, ~k)
+    ]
+
+rule CBCEncrypt_IntermidiateStep:
+    let
+    newBlock = cbc_enc(head, prevBlock, k)
+    in
+    [
+        CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k)
+    ]
+    --[
+        NotEq(tail, null),
+        CBCEncrypt_IntermidiateStep_Check(),
+        CBCEncrypt_IntermidiateStep_Token(token),
+        CBCEncrypt_IntermidiateStep_PrevBlock(prevBlock),
+        CBCEncrypt_IntermidiateStep_NewBlock(newBlock),
+        CBCEncrypt_IntermidiateStep_Head(head),
+        CBCEncrypt_IntermidiateStep_Tail(tail)  
+    ]->
+    [
+        CBCEncryptIntermOut(token, <newBlock, prevBlock, encryptedRest>, 
+            tail, k)
+    ]
+
+rule CBCEncrypt_IntermidiateStep_Last:
+    let
+    lastEncryptedBlock = cbc_enc(head, prevBlock, k)
+    in
+    [
+        CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k)
+    ]
+    --[
+        Eq(tail, null),
+        CBCEncrypt_IntermidiateStep_Last_Check()
+    ]->
+    [
+        CBCEncrypt_Result(token, <lastEncryptedBlock, prevBlock, 
+            encryptedRest>)
+    ]
+    
+rule Scenario_EncryptCBC:
+    [
+        Fr(~token),
+        Fr(~m1),
+        Fr(~m2),
+        Fr(~m3)
+    ]
+    --[
+    ]->
+    [
+        CBCEncrypt(~token, <~m1, ~m2, ~m3, null>),
+        St_Scenario_EncryptCBC(~token)
+    ]
+
+rule Scenario_EncryptCBC_Result:
+    [
+        St_Scenario_EncryptCBC(token),
+        CBCEncrypt_Result(token, encryptedBlocks) 
+    ]
+    --[
+        Scenario_EncryptCBC_Result_Check()
+    ]->
+    []
+
+
+restriction Eq: 
+    "All x y #i. Eq(x, y) @ #i ==> x = y"
+
+restriction NotEq:
+    "All x y #i. NotEq(x, y) @ #i ==> not (x = y)"
+
+restriction CBCEncrypt_OnceForToken:
+    "All token #i. CBCEncrypt_Token(token) @ #i ==>
+    not (Ex #j. CBCEncrypt_Token(token) @ #j & not (#i = #j))"
+
+lemma CBCEncryptInterm_Check:
+    exists-trace
+    "Ex #i. CBCEncrypt_Check() @ #i"
+
+lemma CBCEncrypt_IntermidiateStep_Check:
+    exists-trace
+    "Ex #i. CBCEncrypt_IntermidiateStep_Check() @ #i"
+
+lemma CBCEncrypt_IntermidiateStep_Last_Check:
+    exists-trace
+    "Ex #i. CBCEncrypt_IntermidiateStep_Last_Check() @ #i"
+
+lemma Scenario_EncryptCBC_Result_Check:
+    exists-trace
+    "Ex #i. Scenario_EncryptCBC_Result_Check() @ #i"
+end

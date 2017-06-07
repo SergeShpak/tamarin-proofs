@@ -1,2 +1,7 @@
 **/*.swp
+**/*.aes
 **/log
+
+**/my-*.sh
+
+examples/WDir
