@@ -65,34 +65,164 @@ rule CBCEncrypt_IntermidiateStep_Last:
         CBCEncrypt_IntermidiateStep_Last_Check()
     ]->
     [
-        CBCEncrypt_Result(token, <lastEncryptedBlock, prevBlock, 
+        CBCEncrypt_Result(token, k, <lastEncryptedBlock, prevBlock, 
             encryptedRest>)
     ]
-    
+
+/* CBC Decryption */
+
+rule CBCDecrypt:
+    let
+    newDecrypted = cbc_dec(firstBlock, nextBlock, k)
+    in
+    [
+        CBCDecrypt(token, k, <firstBlock, nextBlock, rest>)
+    ]
+    --[
+        NotEq(firstBlock, null),
+        NotEq(nextBlock, null),
+        NotEq(rest, null),
+        CBCDecrypt_Check()
+    ]->
+    [
+        CBCDecryptIntermOut(token, <newDecrypted, null>, <nextBlock, rest>, k) 
+    ]
+
+rule CBCDecrypt_IntermidiateStep:
+    let
+    newDecrypted = cbc_dec(currBlock, previousBlock, k)
+    in
+    [
+        CBCDecryptIntermOut(token, decryptedBlocks, <currBlock, previousBlock, 
+            rest>, k)
+    ]
+    --[
+        NotEq(currBlock, null),
+        NotEq(previousBlock, null),
+        NotEq(rest, null)
+    ]->
+    [
+        CBCDecryptIntermOut(token, <newDecrypted, decryptedBlocks>,
+            <previousBlock, rest>, k)
+    ]
+
+rule CBCDecrypt_IntermidiateStep_Last:
+    let
+    newDecrypted = cbc_dec(currBlock, previousBlock, k)
+    in
+    [
+        CBCDecryptIntermOut(token, decryptedBlocks, <currBlock, previousBlock, 
+            rest>, k)
+    ]
+    --[
+        NotEq(currBlock, null),
+        NotEq(previousBlock, null),
+        Eq(rest, null),
+        CBCDecrypt_IntermidiateStep_Last_Check()
+    ]->
+    [
+        CBCDecrypt_Result(token, <newDecrypted, decryptedBlocks>)
+    ]   
+
 rule Scenario_EncryptCBC:
     [
         Fr(~token),
         Fr(~m1),
         Fr(~m2),
-        Fr(~m3)
+        Fr(~m3),
+        Fr(~m4)
     ]
     --[
     ]->
     [
-        CBCEncrypt(~token, <~m1, ~m2, ~m3, null>),
+        CBCEncrypt(~token, <~m1, ~m2, ~m3, ~m4, null>),
         St_Scenario_EncryptCBC(~token)
     ]
 
 rule Scenario_EncryptCBC_Result:
     [
         St_Scenario_EncryptCBC(token),
-        CBCEncrypt_Result(token, encryptedBlocks) 
+        CBCEncrypt_Result(token, k, encryptedBlocks) 
     ]
     --[
         Scenario_EncryptCBC_Result_Check()
     ]->
-    []
+    [
+        St_Scenario_EncryptCBC_Result(k, encryptedBlocks)
+    ]
 
+rule Scenario_DecryptCBC:
+    [
+        St_Scenario_EncryptCBC_Result(k, encryptedBlocks),
+        Fr(~token)
+    ]
+    --[
+        Scenario_DecryptCBC_Check()
+    ]->
+    [
+        St_Scenario_DecryptCBC(~token),
+        CBCDecrypt(~token, k, encryptedBlocks)
+    ]
+
+rule Attacker_ActivateOracle_Request:
+    let 
+    m1 = <~m11, ~m12, null>
+    m2 = <~m21, ~m22, null>
+    in
+    [
+        Fr(~token),
+        Fr(~m11),
+        Fr(~m12),
+        Fr(~m21),
+        Fr(~m22)
+    ]
+    --[
+        Attacker_ActivateOracle_Request_Check()
+    ]->
+    [
+        ActivateOracleRequest(~token, m1, m2),
+        St_Attacker_ActivateOracle_Request(~token, m1, m2)
+    ]
+
+rule ActivateOracle_FirstMessage:
+    [
+        ActivateOracleRequest(token, m1, m2)
+    ]
+    --[
+        ActivateOracle_FirstMessage_Check(),
+        ActivateOracle_FirstMessage_Token(token)
+    ]->
+    [
+        CBCEncrypt(token, m1),
+        St_ActivateOracle(token) 
+    ]
+
+rule ActivateOracle_SecondMessage:
+    [
+        ActivateOracleRequest(token, m1, m2)
+    ]
+    --[
+        ActivateOracle_SecondMessage_Check(),
+        ActivateOracle_SecondMessage_Token(token)
+    ]->
+    [
+        CBCEncrypt(token, m2),
+        St_ActivateOracle(token) 
+    ]
+
+rule ActivateOracle_Response:
+    [
+        St_ActivateOracle(token),
+        CBCEncrypt_Result(token, k, encryptedBlocks)
+    ]
+    --[
+        ActivateOracle_Response_Check(),
+        ActivateOracle_Response_Token(token)
+    ]->
+    [
+        !OracleKey(token, k),
+        ActivateOracle_Result(token, encryptedBlocks)
+    ]
 
 restriction Eq: 
     "All x y #i. Eq(x, y) @ #i ==> x = y"
@@ -119,4 +249,33 @@ lemma CBCEncrypt_IntermidiateStep_Last_Check:
 lemma Scenario_EncryptCBC_Result_Check:
     exists-trace
     "Ex #i. Scenario_EncryptCBC_Result_Check() @ #i"
+
+lemma Scenario_DecryptCBC_Check:
+    exists-trace
+    "Ex #i. Scenario_DecryptCBC_Check() @ #i"
+
+lemma CBCDecrypt_Check:
+    exists-trace
+    "Ex #i. CBCDecrypt_Check() @ #i"
+
+lemma CBCDecrypt_IntermidiateStep_Last_Check:
+    exists-trace
+    "Ex #i. CBCDecrypt_IntermidiateStep_Last_Check() @ #i"
+
+lemma Attacker_ActivateOracle_Request_Check:
+    exists-trace
+    "Ex #i. Attacker_ActivateOracle_Request_Check() @ #i"
+
+lemma ActivateOracle_FirstMessage_Check:
+    exists-trace
+    "Ex #i. ActivateOracle_FirstMessage_Check() @ #i"
+
+lemma ActivateOracle_SecondMessage_Check:
+    exists-trace
+    "Ex #i. ActivateOracle_SecondMessage_Check() @ #i"
+
+lemma ActivateOracle_Response_Check:
+    exists-trace
+    "Ex #i. ActivateOracle_Response_Check() @ #i"
+
 end
