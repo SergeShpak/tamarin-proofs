@@ -1,6 +1,8 @@
 theory android
 begin
 
+builtins: hashing
+
 functions: xor/2, xor_inv/2, cbc_enc/3, cbc_dec/3, null/0, enc_int/2, dec_int/2
 
 equations:
@@ -166,15 +168,13 @@ rule Scenario_DecryptCBC:
 
 rule Attacker_ActivateOracle_Request:
     let 
-    m1 = <~m11, ~m12, null>
-    m2 = <~m21, ~m22, null>
+    m1 = <h(~m1), ~m1, null>
+    m2 = <h(~m2), ~m2, null>
     in
     [
         Fr(~token),
-        Fr(~m11),
-        Fr(~m12),
-        Fr(~m21),
-        Fr(~m22)
+        Fr(~m1),
+        Fr(~m2)
     ]
     --[
         Attacker_ActivateOracle_Request_Check()
@@ -193,7 +193,7 @@ rule ActivateOracle_FirstMessage:
         ActivateOracle_FirstMessage_Token(token)
     ]->
     [
-        CBCEncrypt(token, m1),
+        CBCEncrypt(token, <h(m1), m1>),
         St_ActivateOracle(token) 
     ]
 
@@ -206,7 +206,7 @@ rule ActivateOracle_SecondMessage:
         ActivateOracle_SecondMessage_Token(token)
     ]->
     [
-        CBCEncrypt(token, m2),
+        CBCEncrypt(token, <h(m2), m2>),
         St_ActivateOracle(token) 
     ]
 
@@ -223,6 +223,44 @@ rule ActivateOracle_Response:
         !OracleKey(token, k),
         ActivateOracle_Result(token, encryptedBlocks)
     ]
+
+rule Attacker_ActivateOracle_Response:
+    let
+    newCT = <c3, c2, c1, null>
+    in
+    [
+        St_Attacker_ActivateOracle_Request(token, m1, m2),
+        ActivateOracle_Result(token, <c3, c2, c1, c0, null>)
+    ]
+    --[
+        Attacker_ActivateOracle_Response_Check()
+    ]->
+    [
+        OracleDecrypt_Request(token, newCT)  
+    ]
+
+rule OracleDecrypt_Request:
+    [
+        !OracleKey(token, key),
+        OracleDecrypt_Request(token, newCT)
+    ]
+    -->
+    [
+        CBCDecrypt(token, key, newCT),
+        St_OracleDecrypt_Request(token)
+    ]
+
+rule OracleDecrypt_Response:
+    [
+        St_OracleDecrypt_Request(token),
+        CBCDecrypt_Result(token, result)
+    ]
+    --[
+        OracleDecrypt_Response_Check()
+    ]->
+    [
+        OracleDecrypt_Response(token, result)
+    ] 
 
 restriction Eq: 
     "All x y #i. Eq(x, y) @ #i ==> x = y"
@@ -277,5 +315,13 @@ lemma ActivateOracle_SecondMessage_Check:
 lemma ActivateOracle_Response_Check:
     exists-trace
     "Ex #i. ActivateOracle_Response_Check() @ #i"
+
+lemma Attacker_ActivateOracle_Response_Check:
+    exists-trace
+    "Ex #i. Attacker_ActivateOracle_Response_Check() @ #i"
+
+lemma OracleDecrypt_Response_Check:
+    exists-trace
+    "Ex #i. OracleDecrypt_Response_Check() @ #i"
 
 end
