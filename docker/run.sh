@@ -3,4 +3,4 @@ additional_params=
 if [ $# -ge 1 ]; then
     additional_params=$*
 fi
-docker run -d -P --name $container_name $additional_params tamarin-ssh
+docker run -d -P --name $container_name $additional_params tamarin
