@@ -1,3 +1,5 @@
+/* tamarin-prover should be used with --heuristic=i flag */
+
 theory android
 begin
 
@@ -553,6 +555,5 @@ lemma AttackerGuessSecond_AlwaysCorrect_E:
     "All token #i. AttackerGuessSecond_E(token) @ #i ==>
     Ex #j. ActivateOracle_SecondEncrypted_E(token) @ #j & #j < #i &
     not (Ex #k. ActivateOracle_FirstEncrypted_E(token) @ #k)"
-
 
 end
