@@ -3,7 +3,8 @@ begin
 
 builtins: hashing
 
-functions: xor/2, xor_inv/2, cbc_enc/3, cbc_dec/3, null/0, enc_int/2, dec_int/2
+functions: xor/2, xor_inv/2, cbc_enc/3, cbc_dec/3, null/0, enc_int/2, 
+    dec_int/2, bottom/0
 
 equations:
     xor_inv(xor(a, b), a) = b,
@@ -302,6 +303,145 @@ rule AttackerDecrypt_Response_SecondMessage:
     ]->
     []
 
+/* Model to prove that hash-then-CBC-Encrypt is not IND-CCA secure. */
+
+/* 
+   As given in the paper 
+*/
+
+rule Attacker_ActivateOracle_Request_E:
+    let
+    // In our model the attacker memorizes m1 and m2, thus, there no need to
+    // use the same hash
+    m1 = <h(~m1), ~m1, null>
+    m2 = <h(~m1), ~m2, null>
+    in
+    [
+        Fr(~token),
+        Fr(~m1),
+        Fr(~m2)
+    ]
+    --[ Attacker_ActivateOracle_Request_Check_E() ]->
+    [
+        ActivateOracleRequest_E(~token, m1, m2),
+        St_Attacker_ActivateOracle_Request_E(~token)
+    ]
+
+/* Rule is used if Oracle encrypts the first message */
+rule ActivateOracle_FirstMessage_E:
+    [ ActivateOracleRequest_E(token, m1, m2) ]
+    --[
+        ActivateOracle_FirstMessage_Check_E(),
+        ActivateOracle_FirstEncrypted_E(token)
+    ]->
+    [
+        CBCEncrypt(token, <h(m1), m1>),
+        St_ActivateOracle_E(token) 
+    ]
+
+/* Rule is used if Oracle encrypts the second message */
+rule ActivateOracle_SecondMessage_E:
+    [ ActivateOracleRequest_E(token, m1, m2) ]
+    --[
+        ActivateOracle_SecondMessage_Check_E(),
+        ActivateOracle_SecondEncrypted_E(token)
+    ]->
+    [
+        CBCEncrypt(token, <h(m2), m2>),
+        St_ActivateOracle_E(token) 
+    ]
+
+rule ActivateOracle_Response_E:
+    [
+        St_ActivateOracle_E(token),
+        CBCEncrypt_Result(token, k, encryptedBlocks)
+    ]
+    --[
+        ActivateOracle_Response_Check_E(),
+        ActivateOracle_Response_Token_E(token)
+    ]->
+    [
+        // Save the used key in Oracle's local memory
+        !OracleKey_E(token, k),
+        // Send the result to attacker
+        ActivateOracle_Result_E(token, encryptedBlocks)
+    ]
+
+rule Attacker_ActivateOracle_Response_E:
+    let
+    // New request to Oracle
+    newCT = <c3, c2, c1, null>
+    in
+    [
+        St_Attacker_ActivateOracle_Request_E(token),
+        ActivateOracle_Result_E(token, <c3, c2, c1, c0, null>)
+    ]
+    --[ Attacker_ActivateOracle_Response_Check_E() ]->
+    [ OracleDecrypt_Request_E(token, newCT) ]
+
+rule OracleDecrypt_Request_E:
+    [
+        !OracleKey_E(token, key),
+        OracleDecrypt_Request_E(token, newCT)
+    ]
+    -->
+    [
+        CBCDecrypt(token, key, newCT),
+        St_OracleDecrypt_Request_E(token),
+        St_AttackerDecrypt_Request_E(token)
+    ]
+
+rule OracleDecrypt_Response_E:
+    let
+    tailHash = h(tail)
+    in
+    [
+        St_OracleDecrypt_Request_E(token),
+        CBCDecrypt_Result(token, <head, tail, rest>)
+    ]
+    --[ 
+        OracleDecrypt_Response_Check_E(),
+        Eq(tailHash, head)
+    ]->
+    [ OracleDecrypt_Response_E(token, <head, tail, rest>) ]
+
+rule OracleDecrypt_Response_Invalid_E:
+    let
+    tailHash = h(tail)
+    in
+    [
+        St_OracleDecrypt_Request_E(token),
+        CBCDecrypt_Result(token, <head, tail, rest>)
+    ]
+    --[ 
+        OracleDecrypt_Response_Invalid_Check_E(),
+        NotEq(tailHash, head)
+    ]->
+    [ OracleDecrypt_Response_E(token, bottom) ]
+
+rule AttackerDecrypt_Response_E:
+    [
+        OracleDecrypt_Response_E(token, result),
+        St_AttackerDecrypt_Request_E(token)
+    ]
+    --[
+        NotEq(result, bottom),
+        AttackerDecrypt_Response_Check_E(),
+        AttackerGuessFirst_E(token)
+    ]->
+    []
+
+rule AttackerDecrypt_Response_Invalid_E:
+    [
+        OracleDecrypt_Response_E(token, bottom),
+        St_AttackerDecrypt_Request_E(token)
+    ]
+    --[
+        AttackerDecrypt_Response_Invalid_Check_E(),
+        AttackerGuessSecond_E(token)
+    ]->
+    []
+
 restriction Eq: 
     "All x y #i. Eq(x, y) @ #i ==> x = y"
 
@@ -373,5 +513,46 @@ lemma AttackerGuessSecond_AlwaysCorrect:
     "All token #i. AttackerGuessSecond(token) @ #i ==>
     Ex #j. ActivateOracle_SecondEncrypted(token) @ #j & #j < #i &
     not (Ex #k. ActivateOracle_FirstEncrypted(token) @ #k)"
+
+
+/* Paper model sanity checks*/
+
+lemma OracleDecrypt_Response_Check_E:
+    exists-trace
+    "Ex #i. OracleDecrypt_Response_Check_E() @ #i"
+
+lemma OracleDecrypt_Response_Invalid_Check_E:
+    exists-trace
+    "Ex #i. OracleDecrypt_Response_Invalid_Check_E() @ #i"
+
+lemma AttackerDecrypt_Response_Check_E:
+    exists-trace
+    "Ex #i. AttackerDecrypt_Response_Check_E() @ #i"
+
+lemma AttackerDecrypt_Response_Invalid_Check_E:
+    exists-trace
+    "Ex #i. AttackerDecrypt_Response_Invalid_Check_E() @ #i"
+
+
+/* Paper model proofs */
+
+lemma AttackerGuessFirst_OracleHasBeenActivated_E:
+    "All token #i. AttackerGuessFirst_E(token) @ #i ==>
+    Ex #j. ActivateOracle_Response_Token_E(token) @ #j & #j < #i"
+
+lemma AttackerGuessSecond_OracleHasBeenActivated_E:
+    "All token #i. AttackerGuessSecond_E(token) @ #i ==>
+    Ex #j. ActivateOracle_Response_Token_E(token) @ #j & #j < #i"
+
+lemma AttackerGuessFirst_AlwaysCorrect_E:
+    "All token #i. AttackerGuessFirst_E(token) @ #i ==> 
+    Ex #j. ActivateOracle_FirstEncrypted_E(token) @ #j & #j < #i" &
+    not (Ex #k. ActivateOracle_SecondEncrypted_E(token) @ #k)"
+
+lemma AttackerGuessSecond_AlwaysCorrect_E:
+    "All token #i. AttackerGuessSecond_E(token) @ #i ==>
+    Ex #j. ActivateOracle_SecondEncrypted_E(token) @ #j & #j < #i &
+    not (Ex #k. ActivateOracle_FirstEncrypted_E(token) @ #k)"
+
 
 end
