@@ -181,7 +181,8 @@ rule Attacker_ActivateOracle_Request:
     ]->
     [
         ActivateOracleRequest(~token, m1, m2),
-        St_Attacker_ActivateOracle_Request(~token, m1, m2)
+        St_Attacker_ActivateOracle_Request(~token, m1, m2),
+        St_Attacker_ActivateMessages(m1, m2)
     ]
 
 rule ActivateOracle_FirstMessage:
@@ -190,7 +191,7 @@ rule ActivateOracle_FirstMessage:
     ]
     --[
         ActivateOracle_FirstMessage_Check(),
-        ActivateOracle_FirstMessage_Token(token)
+        ActivateOracle_FirstEncrypted(token)
     ]->
     [
         CBCEncrypt(token, <h(m1), m1>),
@@ -203,7 +204,7 @@ rule ActivateOracle_SecondMessage:
     ]
     --[
         ActivateOracle_SecondMessage_Check(),
-        ActivateOracle_SecondMessage_Token(token)
+        ActivateOracle_SecondEncrypted(token)
     ]->
     [
         CBCEncrypt(token, <h(m2), m2>),
@@ -236,7 +237,7 @@ rule Attacker_ActivateOracle_Response:
         Attacker_ActivateOracle_Response_Check()
     ]->
     [
-        OracleDecrypt_Request(token, newCT)  
+        OracleDecrypt_Request(token, newCT)
     ]
 
 rule OracleDecrypt_Request:
@@ -247,7 +248,8 @@ rule OracleDecrypt_Request:
     -->
     [
         CBCDecrypt(token, key, newCT),
-        St_OracleDecrypt_Request(token)
+        St_OracleDecrypt_Request(token),
+        St_AttackerDecrypt_Request(token)
     ]
 
 rule OracleDecrypt_Response:
@@ -260,7 +262,33 @@ rule OracleDecrypt_Response:
     ]->
     [
         OracleDecrypt_Response(token, result)
-    ] 
+    ]
+
+rule AttackerDecrypt_Response_FirstMessage:
+    [
+        OracleDecrypt_Response(token, result),
+        St_AttackerDecrypt_Request(token),
+        St_Attacker_ActivateMessages(m1, m2)
+    ]
+    --[
+        AttackerDecryptFirst_Response_Check(),
+        Eq(m1, result),
+        AttackerGuessFirst(token)
+    ]->
+    []
+
+rule AttackerDecrypt_Response_SecondMessage:
+    [
+        OracleDecrypt_Response(token, result),
+        St_AttackerDecrypt_Request(token),
+        St_Attacker_ActivateMessages(m1, m2)
+    ]
+    --[
+        AttackerDecryptSecond_Response_Check(),
+        Eq(m2, result),
+        AttackerGuessSecond(token)
+    ]->
+    []
 
 restriction Eq: 
     "All x y #i. Eq(x, y) @ #i ==> x = y"
@@ -323,5 +351,41 @@ lemma Attacker_ActivateOracle_Response_Check:
 lemma OracleDecrypt_Response_Check:
     exists-trace
     "Ex #i. OracleDecrypt_Response_Check() @ #i"
+
+lemma AttackerDecryptFirst_Response_Check:
+    exists-trace
+    "Ex #i. AttackerDecryptFirst_Response_Check() @ #i"
+
+lemma AttackerDecryptSecond_Response_Check:
+    exists-trace
+    "Ex #i. AttackerDecryptSecond_Response_Check() @ #i"
+
+lemma ActivateOracle_OneTokenOneActivation [reuse]:
+    "All token #i. ActivateOracle_Response_Token(token) @ #i ==>
+    not (Ex #j. ActivateOracle_Response_Token(token) @ #j & not (#j = #i))"
+
+lemma AttackerGuessFirst_OracleHasBeenActivated [reuse]:
+    "All token #i. AttackerGuessFirst(token) @ #i ==>
+    Ex #j. ActivateOracle_Response_Token(token) @ #j & #j < #i"
+
+lemma AttackerGuessSecond_OracleHasBeenActivated [reuse]:
+    "All token #i. AttackerGuessSecond(token) @ #i ==>
+    Ex #j. ActivateOracle_Response_Token(token) @ #j & #j < #i"
+
+lemma ActivateOracle_FirstEncrypted_EncryptionWithTokenOnlyOnce:
+    "All token #i. ActivateOracle_FirstEncrypted(token) @ #i ==>
+    not (Ex #j. ActivateOracle_SecondEncrypted(token) @ #j)"
+
+lemma ActivateOracle_SecondEncrypted_EncryptionWithTokenOnlyOnce:
+    "All token #i. ActivateOracle_SecondEncrypted(token) @ #i ==>
+    not (Ex #j. ActivateOracle_FirstEncrypted(token) @ #j)"
+
+lemma AttackerGuessFirst_AlwaysCorrect:
+    "All token #i. AttackerGuessFirst(token) @ #i ==> 
+    Ex #j. ActivateOracle_FirstEncrypted(token) @ #j & #j < #i"
+
+lemma AttackerGuessSecond_AlwaysCorrect:
+    "All token #i. AttackerGuessSecond(token) @ #i ==>
+    Ex #j. ActivateOracle_SecondEncrypted(token) @ #j & #j < #i"
 
 end
