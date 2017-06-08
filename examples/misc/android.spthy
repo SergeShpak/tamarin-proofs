@@ -546,7 +546,7 @@ lemma AttackerGuessSecond_OracleHasBeenActivated_E:
 
 lemma AttackerGuessFirst_AlwaysCorrect_E:
     "All token #i. AttackerGuessFirst_E(token) @ #i ==> 
-    Ex #j. ActivateOracle_FirstEncrypted_E(token) @ #j & #j < #i" &
+    Ex #j. ActivateOracle_FirstEncrypted_E(token) @ #j & #j < #i &
     not (Ex #k. ActivateOracle_SecondEncrypted_E(token) @ #k)"
 
 lemma AttackerGuessSecond_AlwaysCorrect_E:
