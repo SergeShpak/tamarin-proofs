@@ -14,160 +14,180 @@ equations:
     cbc_dec(cCurr, cPrev, k) = xor_inv(dec_int(cCurr, k), cPrev)
 
 
+/* CBC Encryption */
+
 rule CBCEncrypt:
     let
-    c1 = cbc_enc(head, ~c0, ~k) 
+    // First encrypted block
+    c1 = cbc_enc(head, ~c0, ~k)
+    encryptedBlocks = <c1, ~c0, null> 
     in
     [
+        // Request to encrypt blocks <head, tail>
         CBCEncrypt(token, <head, tail>),
+        // IV
         Fr(~c0),
+        // Encryption key
         Fr(~k)
     ]
     --[
+        // The message being encrypted must contain at least two blocks
         NotEq(head, null),
         NotEq(tail, null),
         CBCEncrypt_Check(),
         CBCEncrypt_Token(token),
         CBCEncrypt_Tail(tail)
     ]->
-    [
-        CBCEncryptIntermOut(token, <c1, ~c0, null>, tail, ~k)
-    ]
+    [ CBCEncryptIntermOut(token, encryptedBlocks, tail, ~k) ]
 
+/* Rule that describes encryption of the next block */
 rule CBCEncrypt_IntermidiateStep:
     let
-    newBlock = cbc_enc(head, prevBlock, k)
+    newEncryptedBlock = cbc_enc(head, prevBlock, k)
+    encryptedBlocks = <newEncryptedBlock, prevBlock, encryptedRest>
     in
-    [
-        CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k)
-    ]
+    [ CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k) ]
     --[
+        // If 'tail' is not null, then 'head' is not the last block to encrypt
         NotEq(tail, null),
         CBCEncrypt_IntermidiateStep_Check(),
-        CBCEncrypt_IntermidiateStep_Token(token),
-        CBCEncrypt_IntermidiateStep_PrevBlock(prevBlock),
-        CBCEncrypt_IntermidiateStep_NewBlock(newBlock),
-        CBCEncrypt_IntermidiateStep_Head(head),
-        CBCEncrypt_IntermidiateStep_Tail(tail)  
+        CBCEncrypt_IntermidiateStep_Token(token)
     ]->
-    [
-        CBCEncryptIntermOut(token, <newBlock, prevBlock, encryptedRest>, 
-            tail, k)
-    ]
+    [ CBCEncryptIntermOut(token, encryptedBlocks, tail, k) ]
 
+/* Rule that describes encryption of the last block */
 rule CBCEncrypt_IntermidiateStep_Last:
     let
     lastEncryptedBlock = cbc_enc(head, prevBlock, k)
+    encryptedBlocks = <lastEncryptedBlock, prevBlock, encryptedRest>
     in
-    [
-        CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k)
-    ]
+    [ CBCEncryptIntermOut(token, <prevBlock, encryptedRest>, <head, tail>, k) ]
     --[
+        // We know that 'head' is the last block to encrypt, if the next block,
+        // 'tail' is null
         Eq(tail, null),
         CBCEncrypt_IntermidiateStep_Last_Check()
     ]->
-    [
-        CBCEncrypt_Result(token, k, <lastEncryptedBlock, prevBlock, 
-            encryptedRest>)
-    ]
+    [ CBCEncrypt_Result(token, k, encryptedBlocks) ]
+
 
 /* CBC Decryption */
 
 rule CBCDecrypt:
     let
-    newDecrypted = cbc_dec(firstBlock, nextBlock, k)
+    newDecryptedBlock = cbc_dec(firstBlock, nextBlock, k)
+    decryptedBlocks = <newDecryptedBlock, null>
     in
     [
-        CBCDecrypt(token, k, <firstBlock, nextBlock, rest>)
+        // Request to decrypt blocks 
+        CBCDecrypt(token, k, <firstBlock, nextBlock, rest>) 
     ]
     --[
+        // The message being decrypted must contain at least three blocks
         NotEq(firstBlock, null),
         NotEq(nextBlock, null),
         NotEq(rest, null),
         CBCDecrypt_Check()
     ]->
-    [
-        CBCDecryptIntermOut(token, <newDecrypted, null>, <nextBlock, rest>, k) 
-    ]
+    [ CBCDecryptIntermOut(token, decryptedBlocks, <nextBlock, rest>, k) ]
 
+/* Rule that describes decryption of the next block */
 rule CBCDecrypt_IntermidiateStep:
     let
-    newDecrypted = cbc_dec(currBlock, previousBlock, k)
+    newDecryptedBlock = cbc_dec(currBlock, previousBlock, k)
+    decryptedBlocks = <newDecryptedBlock, prevDecryptedBlocks>
     in
     [
-        CBCDecryptIntermOut(token, decryptedBlocks, <currBlock, previousBlock, 
-            rest>, k)
+        CBCDecryptIntermOut(token, prevDecryptedBlocks, 
+            <currBlock, previousBlock, rest>, k)
     ]
     --[
         NotEq(currBlock, null),
         NotEq(previousBlock, null),
         NotEq(rest, null)
     ]->
-    [
-        CBCDecryptIntermOut(token, <newDecrypted, decryptedBlocks>,
-            <previousBlock, rest>, k)
-    ]
+    [ CBCDecryptIntermOut(token, decryptedBlocks, <previousBlock, rest>, k) ]
 
+/* Rule that describes decription of the last block */
 rule CBCDecrypt_IntermidiateStep_Last:
     let
-    newDecrypted = cbc_dec(currBlock, previousBlock, k)
+    newDecryptedBlock = cbc_dec(currBlock, previousBlock, k)
+    decryptedBlocks = <newDecryptedBlock, prevDecryptedBlocks>
     in
     [
-        CBCDecryptIntermOut(token, decryptedBlocks, <currBlock, previousBlock, 
-            rest>, k)
+        CBCDecryptIntermOut(token, prevDecryptedBlocks, 
+            <currBlock, previousBlock, rest>, k)
     ]
     --[
         NotEq(currBlock, null),
         NotEq(previousBlock, null),
+        // We know that currBlock is the last to be decrypted if the block 
+        // after 'previousBlock' is null
         Eq(rest, null),
         CBCDecrypt_IntermidiateStep_Last_Check()
     ]->
-    [
-        CBCDecrypt_Result(token, <newDecrypted, decryptedBlocks>)
-    ]   
+    [ CBCDecrypt_Result(token, decryptedBlocks) ]   
+
+
+/* Encryption scenario for a sanity check */
 
 rule Scenario_EncryptCBC:
     [
         Fr(~token),
+        // You can try to add more message blocks, it's a whole lot of fun
         Fr(~m1),
         Fr(~m2),
         Fr(~m3),
         Fr(~m4)
     ]
-    --[
-    ]->
+    -->
     [
         CBCEncrypt(~token, <~m1, ~m2, ~m3, ~m4, null>),
         St_Scenario_EncryptCBC(~token)
     ]
 
+/* Checking that a message was encrypted */
 rule Scenario_EncryptCBC_Result:
     [
         St_Scenario_EncryptCBC(token),
         CBCEncrypt_Result(token, k, encryptedBlocks) 
     ]
-    --[
-        Scenario_EncryptCBC_Result_Check()
-    ]->
+    --[ Scenario_EncryptCBC_Result_Check() ]->
     [
         St_Scenario_EncryptCBC_Result(k, encryptedBlocks)
     ]
 
+
+/* Decryption scenario of a sanity check */
+
 rule Scenario_DecryptCBC:
     [
+        // Depends of the message emit by the encryption scenario sanity
+        // check
         St_Scenario_EncryptCBC_Result(k, encryptedBlocks),
         Fr(~token)
     ]
-    --[
-        Scenario_DecryptCBC_Check()
-    ]->
+    --[ Scenario_DecryptCBC_Check() ]->
     [
         St_Scenario_DecryptCBC(~token),
         CBCDecrypt(~token, k, encryptedBlocks)
     ]
 
+
+/* Model to prove that hash-then-CBC-Encrypt is not IND-CCA secure. */
+
+/* 
+    The model differs from the one given in the paper. In it Attacker is
+    forgetful, so it does not memorize the messages passed to Oracle. 
+    We could not prove the statement at hand for such a model; therefore, we 
+    change A to be able to use memory, thus the messages passed between O and A
+    changes for those in the paper. Conceptually, the attack stays the same.
+*/
+
 rule Attacker_ActivateOracle_Request:
-    let 
+    let
+    // In our model the attacker memorizes m1 and m2, thus, there no need to
+    // use the same hash
     m1 = <h(~m1), ~m1, null>
     m2 = <h(~m2), ~m2, null>
     in
@@ -176,19 +196,17 @@ rule Attacker_ActivateOracle_Request:
         Fr(~m1),
         Fr(~m2)
     ]
-    --[
-        Attacker_ActivateOracle_Request_Check()
-    ]->
+    --[ Attacker_ActivateOracle_Request_Check() ]->
     [
         ActivateOracleRequest(~token, m1, m2),
-        St_Attacker_ActivateOracle_Request(~token, m1, m2),
-        St_Attacker_ActivateMessages(m1, m2)
+        St_Attacker_ActivateOracle_Request(~token),
+        // Attacker memory
+        St_Attacker_ActivateMessages(~token, m1, m2)
     ]
 
+/* Rule is used if Oracle encrypts the first message */
 rule ActivateOracle_FirstMessage:
-    [
-        ActivateOracleRequest(token, m1, m2)
-    ]
+    [ ActivateOracleRequest(token, m1, m2) ]
     --[
         ActivateOracle_FirstMessage_Check(),
         ActivateOracle_FirstEncrypted(token)
@@ -198,10 +216,9 @@ rule ActivateOracle_FirstMessage:
         St_ActivateOracle(token) 
     ]
 
+/* Rule is used if Oracle encrypts the second message */
 rule ActivateOracle_SecondMessage:
-    [
-        ActivateOracleRequest(token, m1, m2)
-    ]
+    [ ActivateOracleRequest(token, m1, m2) ]
     --[
         ActivateOracle_SecondMessage_Check(),
         ActivateOracle_SecondEncrypted(token)
@@ -221,24 +238,23 @@ rule ActivateOracle_Response:
         ActivateOracle_Response_Token(token)
     ]->
     [
+        // Save the used key in Oracle's local memory
         !OracleKey(token, k),
+        // Send the result to attacker
         ActivateOracle_Result(token, encryptedBlocks)
     ]
 
 rule Attacker_ActivateOracle_Response:
     let
+    // New request to Oracle
     newCT = <c3, c2, c1, null>
     in
     [
-        St_Attacker_ActivateOracle_Request(token, m1, m2),
+        St_Attacker_ActivateOracle_Request(token),
         ActivateOracle_Result(token, <c3, c2, c1, c0, null>)
     ]
-    --[
-        Attacker_ActivateOracle_Response_Check()
-    ]->
-    [
-        OracleDecrypt_Request(token, newCT)
-    ]
+    --[ Attacker_ActivateOracle_Response_Check() ]->
+    [ OracleDecrypt_Request(token, newCT) ]
 
 rule OracleDecrypt_Request:
     [
@@ -257,18 +273,14 @@ rule OracleDecrypt_Response:
         St_OracleDecrypt_Request(token),
         CBCDecrypt_Result(token, result)
     ]
-    --[
-        OracleDecrypt_Response_Check()
-    ]->
-    [
-        OracleDecrypt_Response(token, result)
-    ]
+    --[ OracleDecrypt_Response_Check() ]->
+    [ OracleDecrypt_Response(token, result) ]
 
 rule AttackerDecrypt_Response_FirstMessage:
     [
         OracleDecrypt_Response(token, result),
         St_AttackerDecrypt_Request(token),
-        St_Attacker_ActivateMessages(m1, m2)
+        St_Attacker_ActivateMessages(token, m1, m2)
     ]
     --[
         AttackerDecryptFirst_Response_Check(),
@@ -281,7 +293,7 @@ rule AttackerDecrypt_Response_SecondMessage:
     [
         OracleDecrypt_Response(token, result),
         St_AttackerDecrypt_Request(token),
-        St_Attacker_ActivateMessages(m1, m2)
+        St_Attacker_ActivateMessages(token, m1, m2)
     ]
     --[
         AttackerDecryptSecond_Response_Check(),
@@ -296,21 +308,10 @@ restriction Eq:
 restriction NotEq:
     "All x y #i. NotEq(x, y) @ #i ==> not (x = y)"
 
-restriction CBCEncrypt_OnceForToken:
-    "All token #i. CBCEncrypt_Token(token) @ #i ==>
-    not (Ex #j. CBCEncrypt_Token(token) @ #j & not (#i = #j))"
 
-lemma CBCEncryptInterm_Check:
-    exists-trace
-    "Ex #i. CBCEncrypt_Check() @ #i"
+/* Lemmas */
 
-lemma CBCEncrypt_IntermidiateStep_Check:
-    exists-trace
-    "Ex #i. CBCEncrypt_IntermidiateStep_Check() @ #i"
-
-lemma CBCEncrypt_IntermidiateStep_Last_Check:
-    exists-trace
-    "Ex #i. CBCEncrypt_IntermidiateStep_Last_Check() @ #i"
+/* Sanity checks */
 
 lemma Scenario_EncryptCBC_Result_Check:
     exists-trace
@@ -319,14 +320,6 @@ lemma Scenario_EncryptCBC_Result_Check:
 lemma Scenario_DecryptCBC_Check:
     exists-trace
     "Ex #i. Scenario_DecryptCBC_Check() @ #i"
-
-lemma CBCDecrypt_Check:
-    exists-trace
-    "Ex #i. CBCDecrypt_Check() @ #i"
-
-lemma CBCDecrypt_IntermidiateStep_Last_Check:
-    exists-trace
-    "Ex #i. CBCDecrypt_IntermidiateStep_Last_Check() @ #i"
 
 lemma Attacker_ActivateOracle_Request_Check:
     exists-trace
@@ -360,32 +353,25 @@ lemma AttackerDecryptSecond_Response_Check:
     exists-trace
     "Ex #i. AttackerDecryptSecond_Response_Check() @ #i"
 
-lemma ActivateOracle_OneTokenOneActivation [reuse]:
-    "All token #i. ActivateOracle_Response_Token(token) @ #i ==>
-    not (Ex #j. ActivateOracle_Response_Token(token) @ #j & not (#j = #i))"
 
-lemma AttackerGuessFirst_OracleHasBeenActivated [reuse]:
+/* Model proofs */
+
+lemma AttackerGuessFirst_OracleHasBeenActivated:
     "All token #i. AttackerGuessFirst(token) @ #i ==>
     Ex #j. ActivateOracle_Response_Token(token) @ #j & #j < #i"
 
-lemma AttackerGuessSecond_OracleHasBeenActivated [reuse]:
+lemma AttackerGuessSecond_OracleHasBeenActivated:
     "All token #i. AttackerGuessSecond(token) @ #i ==>
     Ex #j. ActivateOracle_Response_Token(token) @ #j & #j < #i"
 
-lemma ActivateOracle_FirstEncrypted_EncryptionWithTokenOnlyOnce:
-    "All token #i. ActivateOracle_FirstEncrypted(token) @ #i ==>
-    not (Ex #j. ActivateOracle_SecondEncrypted(token) @ #j)"
-
-lemma ActivateOracle_SecondEncrypted_EncryptionWithTokenOnlyOnce:
-    "All token #i. ActivateOracle_SecondEncrypted(token) @ #i ==>
-    not (Ex #j. ActivateOracle_FirstEncrypted(token) @ #j)"
-
 lemma AttackerGuessFirst_AlwaysCorrect:
     "All token #i. AttackerGuessFirst(token) @ #i ==> 
-    Ex #j. ActivateOracle_FirstEncrypted(token) @ #j & #j < #i"
+    Ex #j. ActivateOracle_FirstEncrypted(token) @ #j & #j < #i &
+    not (Ex #k. ActivateOracle_SecondEncrypted(token) @ #k)"
 
 lemma AttackerGuessSecond_AlwaysCorrect:
     "All token #i. AttackerGuessSecond(token) @ #i ==>
-    Ex #j. ActivateOracle_SecondEncrypted(token) @ #j & #j < #i"
+    Ex #j. ActivateOracle_SecondEncrypted(token) @ #j & #j < #i &
+    not (Ex #k. ActivateOracle_FirstEncrypted(token) @ #k)"
 
 end
